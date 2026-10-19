@@ -62,7 +62,75 @@ There are two separate secure API requests:
 
 ### ![](./documentation/ReadmeImages/API.png) API request with IDOR
 
-Request to server x retrieving JSON in the following format displayed in screen x.
+
+In the security-testing setup, the MovieRatingApp communicates with a local backend running on the host machine. The Android emulator accesses this backend through the special loopback address `10.0.2.2`, with traffic redirected from the host using:
+
+```
+adb forward tcp:45678 tcp:45678
+```
+
+A Wi-Fi proxy is configured inside the emulator to forward all HTTPS traffic through BurpSuite (`10.0.2.2:8080`). Burp’s CA certificate is installed on the device to allow TLS interception, and a hostname override is placed in Burp (mapping 10.0.2.2 → 127.0.0.1) so requests from the emulator correctly resolve to the host backend.
+Since the app implements SSL pinning, it initially blocks all interception attempts and displays a MITM attack warning popup.
+
+<img width="448" height="528" alt="image" src="https://github.com/user-attachments/assets/d07cb828-2f14-4c5f-92b6-3e59289a8ec4" />
+
+
+To bypass this, the application is launched through Frida using:
+
+```
+frida -U -f com.example.movierating -l bypass.js
+```
+
+This disables SSL pinning at runtime and allows BurpSuite to fully intercept and inspect the API calls.
+
+Once MITM interception is active, two types of API security behaviours appear:
+---
+
+- 1. Protected API request (IDOR prevention implemented)
+
+When submitting a review, the client sends:
+
+```
+POST /api/reviews HTTP/2
+Host: 10.0.2.2:45678
+Authorization: Bearer <token>.user1
+{"comment":"hello","id":0,"movieId":1448560,"rating":3,"userId":1}
+```
+
+If the request is tampered with in Burp (e.g., by changing `userId` or injecting another user’s ID), the backend responds with:
+
+```
+403 Forbidden
+{"error": "IDOR DETECTED: You cannot modify other users' data!"}
+```
+<img width="1493" height="608" alt="image" src="https://github.com/user-attachments/assets/3d769fd5-a761-4e7e-97aa-275f75f3298a" />
+
+
+This shows that the backend implements proper authorization checks and detects horizontal privilege-escalation attempts. Even though interception is active, the attacker cannot submit reviews on behalf of other users.
+
+---
+
+- 2. Insecure API request (IDOR vulnerability – data exposure)
+
+When loading the movie details screen, another request fetches reviews:
+
+```
+GET /api/reviews?userId=1
+Authorization: Bearer <token>.user1
+```
+
+Although the client only requests reviews for user 1, the backend returns data belonging to user 2 as well:
+
+<img width="1487" height="566" alt="image" src="https://github.com/user-attachments/assets/8796c76b-c092-4abf-8618-bdbd3c28ebfe" />
+
+
+This insecure endpoint leaks other users’ reviews and movie interactions.
+The vulnerability becomes visible in BurpSuite: when the response is intercepted or edited, the UI on the emulator updates in real time, confirming that the application directly reflects any returned JSON into the interface.
+
+---
+
+Together, these two requests demonstrate both a secure endpoint (proper IDOR protection during POST review submissions) and an intentionally insecure endpoint(review-fetching leaking data from other users).
+
 
 ### ![](./documentation/ReadmeImages/Database.png) Room database
 
