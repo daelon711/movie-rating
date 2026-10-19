@@ -253,6 +253,10 @@ The app includes a simple root‑detection component that runs when the MovieVie
 
 The result of this detection is stored in a state variable that is observed by the UI. When the device is considered rooted, both the Movie List and Movie Detail screens change their behaviour: ratings are hidden or disabled, and voice‑review functionality is blocked. In the list screen this is shown as a warning message instead of the numeric rating, and in the detail screen the rating and voice sections display messages that the features are not available on rooted devices.
 
+<img width="427" height="892" alt="image" src="https://github.com/user-attachments/assets/d845b90e-b602-4af4-96b0-6b306642acc3" />
+<img width="430" height="885" alt="image" src="https://github.com/user-attachments/assets/9d544c3a-3c08-4349-b533-a6bcf8e8a5a4" />
+
+
 ## Repositories
 
 - Code
