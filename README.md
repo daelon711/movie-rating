@@ -9,8 +9,8 @@
 
 ## Project summary
 
-An application that loads movies and allows users to rate it.
-
+A Movie Rating Android app that is used to demonstrate mobile security techniques.
+It loads movie data from TMDB over HTTPS, shows a list and detail screen, and lets users rate movies, add comments and record voice‑note reviews. It contains security‑related features and weaknesses: a 3‑rating trial that can be bypassed with Frida, an injected malware module that steals the API key, modification of the APK with apktool to change all posters, root detection that hides functionality on rooted devices, and both secure (internal) and insecure (unencrypted Room) storage examples for demonstrating local data protection issues.
 ## Requirements
 
 | Application                 |
@@ -164,7 +164,53 @@ The app intentionally stores the API key using an unsafe encoding method to show
 
 ### ![](./documentation/ReadmeImages/Notifications.png) Malware
 
-Implementation of malware.
+For the malware component, a small malicious module was added to the original MovieRating app. The goal of this module is to secretly read the TMDB API key from the app and exfiltrate it (for example by logging or emailing it), without the user noticing any change in the normal UI.
+
+The malware logic lives in a separate package `com.example.emailratings`, which contains an `EmailSender` class with two key methods: `testLog()` and `stealApiKey()`. The `stealApiKey()` function is responsible for accessing the API key that is stored unsafely in the app (Base64‑encoded in the networking layer), decoding it and preparing it to be sent out of the device.
+
+To integrate this malicious code into the MovieRating app, both APKs were decompiled with apktool:
+
+`malware.apk` contains the original com.example.emailratings implementation.
+
+`originalmovieapp.apk` contains the original, clean MovieRating app.
+
+`withmalware.apk` contains a test APK used to see how the malware calls were wired.
+
+The `com/example/emailratings` smali package was copied from the malware project into the decompiled MovieRating app directory under `smali_classes6/com/example/emailratings`. Then the `MainActivity` smali in the MovieRating app was modified so that, during `onCreate`, it silently invokes the malware:
+
+```
+.line 34
+invoke-super {p0, p1}, Landroidx/activity/ComponentActivity;->onCreate(Landroid/os/Bundle;)V
+
+.line 37
+sget-object v0, Lcom/example/movierating/EmailSender;->INSTANCE:Lcom/example/movierating/EmailSender;
+invoke-virtual {v0}, Lcom/example/movierating/EmailSender;->testLog()V
+
+.line 38
+sget-object v0, Lcom/example/movierating/EmailSender;->INSTANCE:Lcom/example/movierating/EmailSender;
+invoke-virtual {v0}, Lcom/example/movierating/EmailSender;->stealApiKey()V
+```
+
+(Adapted from the original malware smali, where the calls pointed to `com/example/emailratings/EmailSender`.)
+
+These extra calls are placed right after `super.onCreate(...)`, so they run automatically whenever the app starts, before the user sees the main screen. The user interface continues to work as normal, but in the background `EmailSender.testLog()` and `EmailSender.stealApiKey()` are executed once on launch.
+
+After injecting the malware package and changing the smali:
+
+The modified app was rebuilt with apktool:
+`apktool b originalmovieapp -o rebuilt.apk`
+
+The resulting APK was aligned:
+`zipalign -p -f 4 rebuilt.apk aligned.apk`
+
+A new signing key was created with `keytool`, and the aligned APK was signed with `apksigner`.
+
+The original app was uninstalled from the emulator, and the injected APK was installed with `adb install aligned.apk`.
+
+In this state, the MovieRating app behaves normally from the user’s perspective, but every time it is launched the malicious `EmailSender` code runs inside the app process and can read and leak the hard‑coded API key. This demonstrates how malware can be added to an existing APK by decompiling, injecting extra code and recompiling, without access to the original Kotlin/Java source.
+
+
+
 
 ### ![](./documentation/ReadmeImages/Frida.png) Frida
 
